@@ -13,8 +13,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Eject")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace EgpuEject
 {
@@ -41,6 +41,9 @@ namespace EgpuEject
 
         [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
         internal static extern uint CM_Get_Device_IDW(uint devInst, StringBuilder buffer, int length, uint flags);
+
+        [DllImport("cfgmgr32.dll")]
+        internal static extern uint CM_Disable_DevNode(uint devInst, uint flags);
 
         [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         internal static extern IntPtr SetupDiGetClassDevsW(ref Guid classGuid, string enumerator,
@@ -130,6 +133,7 @@ namespace EgpuEject
 
             string gpuId = id;
             string audioId = null;
+            uint audioDevInst = 0;
             do
             {
                 var childId = new StringBuilder(512);
@@ -138,53 +142,31 @@ namespace EgpuEject
                     string value = childId.ToString();
                     if (!value.Equals(gpuId, StringComparison.OrdinalIgnoreCase) &&
                         value.StartsWith("PCI\\VEN_10DE", StringComparison.OrdinalIgnoreCase))
+                    {
                         audioId = value;
+                        audioDevInst = child;
+                    }
                 }
                 uint sibling;
                 if (Native.CM_Get_Sibling(out sibling, child, 0) != Native.CR_SUCCESS) break;
                 child = sibling;
             } while (true);
 
-            // Remove the audio function first, then the display function and its monitor subtree.
-            // Removing the removable child devnodes takes effect now; disabling their PCI bridge
-            // instead merely schedules a reboot on many USB4 systems.
-            string details = "";
+            // Disable the removable child functions directly and non-persistently. Disabling the
+            // system PCI bridge or force-removing the devnodes is deferred until reboot on this
+            // USB4/NVIDIA stack. No CM_DISABLE_PERSIST flag is used, so a later enumeration can
+            // bring the devices back normally.
             if (audioId != null)
             {
-                EjectResult audio = RemoveDevice(audioId);
-                details += audio.Message + "\n\n";
-                if (!audio.Success) return new EjectResult { Message = "Could not remove the eGPU audio function.\n\n" + details.Trim() };
+                uint audioResult = Native.CM_Disable_DevNode(audioDevInst, 0);
+                if (audioResult != Native.CR_SUCCESS)
+                    return new EjectResult { Message = "Could not disable the eGPU audio function (Configuration Manager error " + audioResult + ")." };
             }
 
-            EjectResult display = RemoveDevice(gpuId);
-            details += display.Message;
-            if (display.Success)
-                return new EjectResult { Success = true, Message = "eGPU functions removed. It is now safe to unplug the cable." };
-            return new EjectResult { Message = "Windows could not force-remove the RTX 4060 Ti.\n\n" + details.Trim() };
-        }
-
-        private static EjectResult RemoveDevice(string deviceId)
-        {
-            var start = new ProcessStartInfo
-            {
-                FileName = Environment.ExpandEnvironmentVariables(@"%WINDIR%\System32\pnputil.exe"),
-                Arguments = "/remove-device \"" + deviceId + "\" /subtree /force",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-            using (Process process = Process.Start(start))
-            {
-                string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-                process.WaitForExit();
-                bool reboot = output.IndexOf("reboot is needed", StringComparison.OrdinalIgnoreCase) >= 0;
-                return new EjectResult
-                {
-                    Success = process.ExitCode == 0 && !reboot,
-                    Message = output.Trim()
-                };
-            }
+            uint displayResult = Native.CM_Disable_DevNode(gpu, 0);
+            if (displayResult == Native.CR_SUCCESS)
+                return new EjectResult { Success = true, Message = "eGPU display and audio functions disabled. It is now safe to unplug the cable." };
+            return new EjectResult { Message = "Windows could not disable the RTX 4060 Ti (Configuration Manager error " + displayResult + ")." };
         }
 
         private static string FindGpu()
@@ -257,7 +239,7 @@ namespace EgpuEject
             retry.ForeColor = Color.White;
             retry.Visible = false;
             retry.Click += async (s, e) => await Attempt();
-            force.Text = "Force remove eGPU (Admin)";
+            force.Text = "Force disable eGPU (Admin)";
             force.Height = 64;
             force.Dock = DockStyle.Bottom;
             force.FlatStyle = FlatStyle.Flat;
@@ -300,7 +282,7 @@ namespace EgpuEject
         private void StartElevatedForce()
         {
             DialogResult choice = MessageBox.Show(
-                "Force remove removes the eGPU's display and audio devices even if Windows says they are busy.\n\n" +
+                "Force disable stops the eGPU's display and audio devices even if normal eject is blocked.\n\n" +
                 "Displays connected to the eGPU will go black immediately. Unsaved GPU work may be lost.\n\nContinue?",
                 "Force disconnect eGPU", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
@@ -327,7 +309,7 @@ namespace EgpuEject
         {
             retry.Visible = false;
             force.Visible = false;
-            status.Text = "Force-removing the eGPU devices…";
+            status.Text = "Disabling the eGPU devices…";
             UseWaitCursor = true;
             EjectResult result = await Task.Run(() => Ejector.ForceDisconnect4060Ti());
             UseWaitCursor = false;
