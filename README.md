@@ -2,6 +2,8 @@
 
 A controller-friendly Windows utility that disconnects an external NVIDIA GeForce RTX 4060 Ti. Launching it from Windows or Xbox full-screen mode immediately requests administrator approval and runs the force-disable sequence that takes the GPU offline.
 
+The release also includes `eGPU-Reconnect.exe`, a companion utility for this PC. It requests administrator approval, re-enables the ASMedia downstream PCIe bridge above the eGPU, and asks Windows to scan for the RTX 4060 Ti and connected displays.
+
 ## Safety behavior
 
 The normal path calls the documented Windows Configuration Manager eject request and does not force-disable the GPU. Windows can refuse the request while a game, display, driver, or other process is using it. Unplug only after the app says it is safe.
@@ -27,7 +29,7 @@ Windows includes the .NET Framework compiler used by this project:
 .\build.ps1
 ```
 
-The output is `dist\eGPU-Eject.exe` and has no external runtime dependencies beyond Windows .NET Framework 4.x.
+The outputs are `dist\eGPU-Eject.exe` and `dist\eGPU-Reconnect.exe`. Neither has external runtime dependencies beyond Windows .NET Framework 4.x.
 
 ## License
 
