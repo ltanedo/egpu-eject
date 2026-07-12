@@ -10,12 +10,12 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("eGPU Eject")]
-[assembly: AssemblyDescription("Safely eject an NVIDIA GeForce RTX 4060 Ti eGPU")]
+[assembly: AssemblyDescription("Disconnect an NVIDIA GPU in the supported eGPU dock")]
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Eject")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace EgpuEject
 {
@@ -91,16 +91,22 @@ namespace EgpuEject
         internal string Message;
     }
 
+    internal sealed class EgpuDevice
+    {
+        internal string Id;
+        internal string Name;
+    }
+
     internal static class Ejector
     {
-        internal static EjectResult Eject4060Ti()
+        internal static EjectResult EjectRtx()
         {
-            string id = FindGpu();
-            if (id == null)
-                return new EjectResult { Message = "RTX 4060 Ti eGPU not found.\n\nConnect it and choose Retry." };
+            EgpuDevice device = FindEgpu();
+            if (device == null)
+                return new EjectResult { Message = "NVIDIA eGPU not found behind the ASMedia dock.\n\nConnect it and choose Retry." };
 
             uint devInst;
-            uint locate = Native.CM_Locate_DevNodeW(out devInst, id, Native.CM_LOCATE_DEVNODE_NORMAL);
+            uint locate = Native.CM_Locate_DevNodeW(out devInst, device.Id, Native.CM_LOCATE_DEVNODE_NORMAL);
             if (locate != Native.CR_SUCCESS)
                 return new EjectResult { Message = "Windows could not open the eGPU device (error " + locate + ")." };
 
@@ -108,7 +114,7 @@ namespace EgpuEject
             Native.PnpVetoType veto;
             uint result = Native.CM_Request_Device_EjectW(devInst, out veto, vetoName, vetoName.Capacity, 0);
             if (result == Native.CR_SUCCESS)
-                return new EjectResult { Success = true, Message = "Safe to unplug the RTX 4060 Ti eGPU." };
+                return new EjectResult { Success = true, Message = "Safe to unplug the " + device.Name + " eGPU." };
 
             string blocker = vetoName.Length > 0 ? "\n\nBlocked by: " + vetoName : "";
             return new EjectResult
@@ -117,14 +123,14 @@ namespace EgpuEject
             };
         }
 
-        internal static EjectResult ForceDisconnect4060Ti()
+        internal static EjectResult ForceDisconnectRtx()
         {
-            string id = FindGpu();
-            if (id == null)
-                return new EjectResult { Message = "RTX 4060 Ti eGPU not found." };
+            EgpuDevice device = FindEgpu();
+            if (device == null)
+                return new EjectResult { Message = "NVIDIA eGPU not found behind the ASMedia dock." };
 
             uint gpu, bridge;
-            uint result = Native.CM_Locate_DevNodeW(out gpu, id, Native.CM_LOCATE_DEVNODE_NORMAL);
+            uint result = Native.CM_Locate_DevNodeW(out gpu, device.Id, Native.CM_LOCATE_DEVNODE_NORMAL);
             if (result != Native.CR_SUCCESS || Native.CM_Get_Parent(out bridge, gpu, 0) != Native.CR_SUCCESS)
                 return new EjectResult { Message = "Windows could not locate the eGPU bridge." };
 
@@ -132,7 +138,7 @@ namespace EgpuEject
             if (Native.CM_Get_Child(out child, bridge, 0) != Native.CR_SUCCESS)
                 return new EjectResult { Message = "Windows could not enumerate the eGPU functions." };
 
-            string gpuId = id;
+            string gpuId = device.Id;
             string audioId = null;
             uint audioDevInst = 0;
             do
@@ -160,7 +166,7 @@ namespace EgpuEject
             // vetoes its own disable until the display adapter has been taken offline.
             uint displayResult = Native.CM_Disable_DevNode(gpu, 0);
             if (displayResult != Native.CR_SUCCESS)
-                return new EjectResult { Message = "Windows could not disable the RTX 4060 Ti (Configuration Manager error " + displayResult + ")." };
+                return new EjectResult { Message = "Windows could not disable the " + device.Name + " (Configuration Manager error " + displayResult + ")." };
 
             uint audioResult = Native.CR_SUCCESS;
             if (audioId != null)
@@ -172,7 +178,7 @@ namespace EgpuEject
             return new EjectResult { Success = true, Message = audioNote + "\n\nIt is now safe to unplug the cable." };
         }
 
-        private static string FindGpu()
+        private static EgpuDevice FindEgpu()
         {
             Guid display = Native.DisplayClass;
             IntPtr set = Native.SetupDiGetClassDevsW(ref display, null, IntPtr.Zero, Native.DIGCF_PRESENT);
@@ -194,12 +200,17 @@ namespace EgpuEject
                     if (!Native.SetupDiGetDeviceRegistryPropertyW(set, ref data, Native.SPDRP_DEVICEDESC,
                         out type, raw, (uint)raw.Length, out needed)) continue;
                     string name = Encoding.Unicode.GetString(raw).TrimEnd('\0');
-                    if (name.IndexOf("NVIDIA GeForce RTX 4060 Ti", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    uint parent;
+                    if (Native.CM_Get_Parent(out parent, data.DevInst, 0) != Native.CR_SUCCESS) continue;
+                    var parentId = new StringBuilder(512);
+                    if (Native.CM_Get_Device_IDW(parent, parentId, parentId.Capacity, 0) != Native.CR_SUCCESS) continue;
+                    if (!parentId.ToString().StartsWith("PCI\\VEN_1B21&DEV_2461", StringComparison.OrdinalIgnoreCase)) continue;
 
                     var id = new StringBuilder(512);
                     int required;
-                    if (Native.SetupDiGetDeviceInstanceIdW(set, ref data, id, id.Capacity, out required))
-                        return id.ToString();
+                    if (Native.SetupDiGetDeviceInstanceIdW(set, ref data, id, id.Capacity, out required) &&
+                        id.ToString().StartsWith("PCI\\VEN_10DE&", StringComparison.OrdinalIgnoreCase))
+                        return new EgpuDevice { Id = id.ToString(), Name = name };
                 }
             }
             finally { Native.SetupDiDestroyDeviceInfoList(set); }
@@ -226,7 +237,7 @@ namespace EgpuEject
             Font = new Font("Segoe UI", 14f);
             KeyPreview = true;
 
-            var title = new Label { Text = "RTX 4060 Ti eGPU", Font = new Font("Segoe UI Semibold", 25f),
+            var title = new Label { Text = "NVIDIA eGPU", Font = new Font("Segoe UI Semibold", 25f),
                 ForeColor = Color.FromArgb(118, 224, 43), TextAlign = ContentAlignment.MiddleCenter,
                 Dock = DockStyle.Top, Height = 82 };
             status.Dock = DockStyle.Fill;
@@ -264,7 +275,7 @@ namespace EgpuEject
             retry.Visible = false;
             status.Text = "Asking Windows to safely eject the eGPU…";
             UseWaitCursor = true;
-            EjectResult result = await Task.Run(() => Ejector.Eject4060Ti());
+            EjectResult result = await Task.Run(() => Ejector.EjectRtx());
             UseWaitCursor = false;
             status.Text = result.Message;
             if (result.Success)
@@ -314,7 +325,7 @@ namespace EgpuEject
             force.Visible = false;
             status.Text = "Disabling the eGPU devices…";
             UseWaitCursor = true;
-            EjectResult result = await Task.Run(() => Ejector.ForceDisconnect4060Ti());
+            EjectResult result = await Task.Run(() => Ejector.ForceDisconnectRtx());
             UseWaitCursor = false;
             status.Text = result.Message;
             status.ForeColor = result.Success ? Color.FromArgb(118, 224, 43) : Color.White;

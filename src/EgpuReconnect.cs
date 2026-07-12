@@ -8,12 +8,12 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("eGPU Reconnect")]
-[assembly: AssemblyDescription("Re-enable the ASMedia bridge for an RTX 4060 Ti eGPU")]
+[assembly: AssemblyDescription("Re-enable the ASMedia bridge for an NVIDIA eGPU")]
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Reconnect")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace EgpuReconnect
 {
@@ -25,12 +25,13 @@ namespace EgpuReconnect
 
     internal static class Reconnector
     {
-        // The downstream ASMedia switch port directly above this machine's RTX 4060 Ti.
-        private const string BridgeId = @"PCI\VEN_1B21&DEV_2461&SUBSYS_24611B21&REV_00\5&23E67DFE&0&000021";
+        // Compatible ID shared by the ASMedia PCIe switch ports in this eGPU dock.
+        // Using the hardware ID rather than an instance path survives GPU swaps and port changes.
+        private const string BridgeHardwareId = @"PCI\VEN_1B21&DEV_2461";
 
         internal static string Run()
         {
-            CommandResult enable = Pnp("/enable-device \"" + BridgeId + "\"");
+            CommandResult enable = Pnp("/enable-device /deviceid \"" + BridgeHardwareId + "\"");
             bool enabled = enable.Output.IndexOf("enabled successfully", StringComparison.OrdinalIgnoreCase) >= 0 ||
                            enable.Output.IndexOf("already enabled", StringComparison.OrdinalIgnoreCase) >= 0;
             if (!enabled)
@@ -42,7 +43,7 @@ namespace EgpuReconnect
             if (!scanned)
                 throw new InvalidOperationException("The bridge was enabled, but hardware scan failed.\n\n" + scan.Output.Trim());
 
-            return "eGPU bridge enabled and hardware scan completed.\n\nThe RTX 4060 Ti and connected TV should now appear.";
+            return "eGPU bridge enabled and hardware scan completed.\n\nThe NVIDIA card and connected displays should now appear.";
         }
 
         private static CommandResult Pnp(string arguments)
@@ -81,7 +82,7 @@ namespace EgpuReconnect
 
             var title = new Label
             {
-                Text = "RTX 4060 Ti eGPU",
+                Text = "NVIDIA eGPU",
                 Font = new Font("Segoe UI Semibold", 25f),
                 ForeColor = Color.FromArgb(118, 224, 43),
                 TextAlign = ContentAlignment.MiddleCenter,

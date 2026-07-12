@@ -1,16 +1,16 @@
 # eGPU Eject
 
-A controller-friendly Windows utility that disconnects an external NVIDIA GeForce RTX 4060 Ti. Launching it from Windows or Xbox full-screen mode immediately requests administrator approval and runs the force-disable sequence that takes the GPU offline.
+A controller-friendly Windows utility that disconnects an NVIDIA graphics card in the supported ASMedia USB4 eGPU dock. Launching it from Windows or Xbox full-screen mode immediately requests administrator approval and runs the force-disable sequence that takes the eGPU offline.
 
-The release also includes `eGPU-Reconnect.exe`, a companion utility for this PC with a distinct blue reconnect-arrow icon. It requests administrator approval, re-enables the ASMedia downstream PCIe bridge above the eGPU, and asks Windows to scan for the RTX 4060 Ti and connected displays.
+The release also includes `eGPU-Reconnect.exe`, a companion utility for this PC with a distinct blue reconnect-arrow icon. It requests administrator approval, enables the dock's ASMedia PCIe switch ports by hardware ID, and asks Windows to scan for the installed NVIDIA card and connected displays. This survives GPU swaps and device-instance changes.
 
 ## Safety behavior
 
 The normal path calls the documented Windows Configuration Manager eject request and does not force-disable the GPU. Windows can refuse the request while a game, display, driver, or other process is using it. Unplug only after the app says it is safe.
 
-If normal eject is vetoed, **Force disable eGPU (Admin)** uses the Windows Configuration Manager API to disable the RTX 4060 Ti first and then makes a best-effort attempt to disable HDMI audio. Display-first ordering lets Windows migrate the desktop before releasing audio endpoints; an audio veto no longer prevents GPU shutdown. The disable is non-persistent, so the enclosure can enumerate normally when reconnected. This avoids bridge disable and forced devnode removal operations, both of which some USB4 systems defer until reboot. Administrator approval is required, and displays connected to the eGPU can blank immediately. Use it only after saving work and closing GPU applications.
+If normal eject is vetoed, **Force disable eGPU (Admin)** finds a present display adapter with NVIDIA's PCI vendor ID (`VEN_10DE`) whose direct parent is the supported ASMedia dock bridge. It disables that GPU first and then makes a best-effort attempt to disable its NVIDIA sibling functions such as HDMI audio. Display-first ordering lets Windows migrate the desktop before releasing audio endpoints; an audio veto no longer prevents GPU shutdown. The disable is non-persistent, so the enclosure can enumerate normally when reconnected. Administrator approval is required, and displays connected to the eGPU can blank immediately. Use it only after saving work and closing GPU applications.
 
-This first release intentionally targets the RTX 4060 Ti by device name so it will not accidentally eject another display adapter.
+Assuming only one NVIDIA card is installed in the dock, the eject utility supports GeForce RTX/GTX, Titan, RTX professional, Quadro, and other NVIDIA display cards while ignoring internal GPUs and NVIDIA devices on unrelated PCIe paths.
 
 ## Use
 
