@@ -6,7 +6,7 @@ A controller-friendly Windows utility that safely ejects an external NVIDIA GeFo
 
 The normal path calls the documented Windows Configuration Manager eject request and does not force-disable the GPU. Windows can refuse the request while a game, display, driver, or other process is using it. Unplug only after the app says it is safe.
 
-If normal eject is vetoed, **Force disable eGPU (Admin)** uses the Windows Configuration Manager API to disable the removable HDMI-audio function first and then the RTX 4060 Ti. The disable is non-persistent, so the enclosure can enumerate normally when it is reconnected. This avoids bridge disable and forced devnode removal operations, both of which some USB4 systems defer until reboot. Administrator approval is required, and displays connected to the eGPU can blank immediately. Use it only after saving work and closing GPU applications.
+If normal eject is vetoed, **Force disable eGPU (Admin)** uses the Windows Configuration Manager API to disable the RTX 4060 Ti first and then makes a best-effort attempt to disable HDMI audio. Display-first ordering lets Windows migrate the desktop before releasing audio endpoints; an audio veto no longer prevents GPU shutdown. The disable is non-persistent, so the enclosure can enumerate normally when reconnected. This avoids bridge disable and forced devnode removal operations, both of which some USB4 systems defer until reboot. Administrator approval is required, and displays connected to the eGPU can blank immediately. Use it only after saving work and closing GPU applications.
 
 This first release intentionally targets the RTX 4060 Ti by device name so it will not accidentally eject another display adapter.
 

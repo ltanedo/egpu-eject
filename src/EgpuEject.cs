@@ -13,8 +13,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Eject")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace EgpuEject
 {
@@ -155,18 +155,20 @@ namespace EgpuEject
             // Disable the removable child functions directly and non-persistently. Disabling the
             // system PCI bridge or force-removing the devnodes is deferred until reboot on this
             // USB4/NVIDIA stack. No CM_DISABLE_PERSIST flag is used, so a later enumeration can
-            // bring the devices back normally.
-            if (audioId != null)
-            {
-                uint audioResult = Native.CM_Disable_DevNode(audioDevInst, 0);
-                if (audioResult != Native.CR_SUCCESS)
-                    return new EjectResult { Message = "Could not disable the eGPU audio function (Configuration Manager error " + audioResult + ")." };
-            }
-
+            // bring the devices back normally. Display goes first: active HDMI audio commonly
+            // vetoes its own disable until the display adapter has been taken offline.
             uint displayResult = Native.CM_Disable_DevNode(gpu, 0);
-            if (displayResult == Native.CR_SUCCESS)
-                return new EjectResult { Success = true, Message = "eGPU display and audio functions disabled. It is now safe to unplug the cable." };
-            return new EjectResult { Message = "Windows could not disable the RTX 4060 Ti (Configuration Manager error " + displayResult + ")." };
+            if (displayResult != Native.CR_SUCCESS)
+                return new EjectResult { Message = "Windows could not disable the RTX 4060 Ti (Configuration Manager error " + displayResult + ")." };
+
+            uint audioResult = Native.CR_SUCCESS;
+            if (audioId != null)
+                audioResult = Native.CM_Disable_DevNode(audioDevInst, 0);
+
+            string audioNote = audioResult == Native.CR_SUCCESS
+                ? "Display and HDMI-audio functions are offline."
+                : "The display function is offline. HDMI audio remained vetoed (error " + audioResult + "), but it is safe to unplug with the GPU driver stopped.";
+            return new EjectResult { Success = true, Message = audioNote + "\n\nIt is now safe to unplug the cable." };
         }
 
         private static string FindGpu()
