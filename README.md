@@ -1,6 +1,6 @@
 # eGPU Eject
 
-A controller-friendly Windows utility that safely ejects an external NVIDIA GeForce RTX 4060 Ti. Launch it from Windows or Xbox full-screen mode and it immediately asks Windows Plug and Play to eject the GPU. If Windows reports that the GPU is busy, the app stays open with a large **Retry** button.
+A controller-friendly Windows utility that disconnects an external NVIDIA GeForce RTX 4060 Ti. Launching it from Windows or Xbox full-screen mode immediately requests administrator approval and runs the force-disable sequence that takes the GPU offline.
 
 ## Safety behavior
 
@@ -13,11 +13,11 @@ This first release intentionally targets the RTX 4060 Ti by device name so it wi
 ## Use
 
 1. Download `eGPU-Eject.exe` from Releases.
-2. Close games and GPU-intensive programs.
-3. Run the app. No installation or administrator prompt is required.
+2. Save work and close games or GPU-intensive programs.
+3. Run the app and approve the Windows administrator prompt.
 4. Wait for **Safe to unplug** before disconnecting the cable.
 
-For controller use, add the EXE as an app in the Windows/Xbox full-screen experience. Launching it begins the eject request automatically. If Retry appears, activate it with the controller's confirm/A action. Escape or the controller back action closes the app.
+For controller use, add the EXE as an app in the Windows/Xbox full-screen experience. Launching it immediately requests elevation and begins the working force-disable sequence; no second in-app confirmation is required.
 
 ## Build
 

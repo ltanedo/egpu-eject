@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Reflection;
+using System.Security.Principal;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -13,8 +14,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Eject")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace EgpuEject
 {
@@ -334,7 +335,27 @@ namespace EgpuEject
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
             bool force = args.Length > 0 && string.Equals(args[0], "--force", StringComparison.OrdinalIgnoreCase);
-            Application.Run(new MainForm(force));
+            bool elevated = new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator);
+            if (!force && !elevated)
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = Application.ExecutablePath,
+                        Arguments = "--force",
+                        UseShellExecute = true,
+                        Verb = "runas"
+                    });
+                }
+                catch (Win32Exception ex)
+                {
+                    if (ex.NativeErrorCode != 1223)
+                        MessageBox.Show(ex.Message, "Could not start as administrator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+                return;
+            }
+            Application.Run(new MainForm(true));
         }
     }
 }
