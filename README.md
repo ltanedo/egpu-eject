@@ -35,6 +35,8 @@ Windows includes the .NET Framework compiler used by this project:
 
 The outputs are `dist\eGPU-Eject.exe` and `dist\eGPU-Reconnect.exe`. Neither has external runtime dependencies beyond Windows .NET Framework 4.x.
 
+`dist\eGPU-Tray.exe` combines both workflows in one elevated notification-area app. It watches Windows device-change events for the ASMedia USB4 router, automatically runs reconnect and recovery when the dock arrives, and provides **Disconnect eGPU**, **Reconnect now**, **Run at startup**, and **Exit** commands. Startup is opt-in; the menu toggle creates or removes a per-user highest-privilege logon task so automatic launches do not prompt for UAC.
+
 ## License
 
 MIT

@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+#if !TRAY_BUILD
 [assembly: AssemblyTitle("eGPU Reconnect")]
 [assembly: AssemblyDescription("Re-enable the ASMedia bridge for an NVIDIA eGPU")]
 [assembly: AssemblyCompany("ltanedo")]
@@ -17,6 +18,7 @@ using System.Windows.Forms;
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
 [assembly: AssemblyVersion("1.6.0.0")]
 [assembly: AssemblyFileVersion("1.6.0.0")]
+#endif
 
 namespace EgpuReconnect
 {
