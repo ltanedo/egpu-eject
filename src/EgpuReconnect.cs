@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Reconnect")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.5.0.0")]
-[assembly: AssemblyFileVersion("1.5.0.0")]
+[assembly: AssemblyVersion("1.6.0.0")]
+[assembly: AssemblyFileVersion("1.6.0.0")]
 
 namespace EgpuReconnect
 {
@@ -47,6 +47,15 @@ namespace EgpuReconnect
 
         [DllImport("cfgmgr32.dll")]
         internal static extern uint CM_Get_Parent(out uint parent, uint devInst, uint flags);
+
+        [DllImport("cfgmgr32.dll")]
+        internal static extern uint CM_Get_Child(out uint child, uint devInst, uint flags);
+
+        [DllImport("cfgmgr32.dll")]
+        internal static extern uint CM_Get_Sibling(out uint sibling, uint devInst, uint flags);
+
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+        internal static extern uint CM_Locate_DevNodeW(out uint devInst, string deviceId, uint flags);
 
         [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
         internal static extern uint CM_Get_Device_IDW(uint devInst, StringBuilder buffer, int length, uint flags);
@@ -103,6 +112,13 @@ namespace EgpuReconnect
             if (gpu == null)
                 throw new InvalidOperationException("The dock bridge is enabled, but no NVIDIA display adapter was found behind it.");
 
+            EnableDockNvidiaFunctions(gpu.ParentId);
+            Pnp("/scan-devices");
+            Thread.Sleep(2500);
+            gpu = FindNvidiaEgpu();
+            if (gpu == null)
+                throw new InvalidOperationException("The NVIDIA dock devices were enabled, but the display adapter did not reappear.");
+
             uint problem = GetProblem(gpu.DevInst);
             if (problem == Native.CM_PROB_FAILED_POST_START)
             {
@@ -155,6 +171,25 @@ namespace EgpuReconnect
                 throw new InvalidOperationException(gpu.Name + " was detected, but Windows reports device problem code " + problem + ".");
 
             return "eGPU bridge enabled and hardware scan completed.\n\n" + gpu.Name + " is working with no device error.";
+        }
+
+        private static void EnableDockNvidiaFunctions(string bridgeId)
+        {
+            uint bridge;
+            if (Native.CM_Locate_DevNodeW(out bridge, bridgeId, 0) != Native.CR_SUCCESS) return;
+            uint child;
+            if (Native.CM_Get_Child(out child, bridge, 0) != Native.CR_SUCCESS) return;
+            do
+            {
+                var id = new StringBuilder(512);
+                if (Native.CM_Get_Device_IDW(child, id, id.Capacity, 0) == Native.CR_SUCCESS &&
+                    id.ToString().StartsWith("PCI\\VEN_10DE&", StringComparison.OrdinalIgnoreCase))
+                    Pnp("/enable-device \"" + id + "\"");
+
+                uint sibling;
+                if (Native.CM_Get_Sibling(out sibling, child, 0) != Native.CR_SUCCESS) break;
+                child = sibling;
+            } while (true);
         }
 
         private static uint GetProblem(uint devInst)

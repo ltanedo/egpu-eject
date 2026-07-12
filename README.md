@@ -6,6 +6,8 @@ The release also includes `eGPU-Reconnect.exe`, a companion utility for this PC 
 
 Reconnect also checks the docked NVIDIA adapter's Windows device problem code. For Code 43 it restarts that exact GPU, checks again, and if necessary performs one disable/enable cycle plus another hardware scan. If Code 43 remains, it restarts the exact ASMedia downstream PCIe bridge. As a final recovery stage it restarts only this enclosure's ASMedia USB4 router (`USB4\VID_174C&PID_2461`), waits for the PCIe tunnel to rebuild, rescans, and checks the GPU again. This is the closest safe software equivalent to unplugging and reconnecting the laptop-side USB4 cable, though it cannot reproduce a true electrical power cut. It never targets an internal or unrelated NVIDIA adapter and does not persistently disable the bridge or router.
 
+Before checking Code 43, Reconnect enumerates the NVIDIA PCI functions directly beneath the dock bridge and enables each exact devnode. This reverses the eject utility's normal Code 22 state for the GPU, HDMI audio, and other NVIDIA companion functions without enabling unrelated or internal NVIDIA devices.
+
 ## Safety behavior
 
 The normal path calls the documented Windows Configuration Manager eject request and does not force-disable the GPU. Windows can refuse the request while a game, display, driver, or other process is using it. Unplug only after the app says it is safe.
