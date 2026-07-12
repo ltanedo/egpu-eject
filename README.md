@@ -4,7 +4,9 @@ A controller-friendly Windows utility that safely ejects an external NVIDIA GeFo
 
 ## Safety behavior
 
-The app calls the documented Windows Configuration Manager eject request. It does **not** force-disable the GPU. Windows can refuse the request while a game, display, driver, or other process is using it. Unplug only after the app says it is safe.
+The normal path calls the documented Windows Configuration Manager eject request and does not force-disable the GPU. Windows can refuse the request while a game, display, driver, or other process is using it. Unplug only after the app says it is safe.
+
+If normal eject is vetoed, **Force disconnect (Admin)** disables the eGPU's upstream PCI bridge with Windows PnPUtil. This also disables the GPU's audio function. It requires administrator approval and can immediately blank displays connected to the eGPU. Use it only after saving work and closing GPU applications.
 
 This first release intentionally targets the RTX 4060 Ti by device name so it will not accidentally eject another display adapter.
 

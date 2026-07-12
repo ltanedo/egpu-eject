@@ -1,6 +1,7 @@
 using System;
 using System.ComponentModel;
 using System.Drawing;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Reflection;
 using System.Text;
@@ -12,8 +13,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Eject")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace EgpuEject
 {
@@ -28,6 +29,12 @@ namespace EgpuEject
         [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
         internal static extern uint CM_Request_Device_EjectW(uint devInst, out PnpVetoType vetoType,
             StringBuilder vetoName, int nameLength, uint flags);
+
+        [DllImport("cfgmgr32.dll")]
+        internal static extern uint CM_Get_Parent(out uint parent, uint devInst, uint flags);
+
+        [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+        internal static extern uint CM_Get_Device_IDW(uint devInst, StringBuilder buffer, int length, uint flags);
 
         [DllImport("setupapi.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         internal static extern IntPtr SetupDiGetClassDevsW(ref Guid classGuid, string enumerator,
@@ -100,6 +107,40 @@ namespace EgpuEject
             };
         }
 
+        internal static EjectResult ForceDisconnect4060Ti()
+        {
+            string id = FindGpu();
+            if (id == null)
+                return new EjectResult { Message = "RTX 4060 Ti eGPU not found." };
+
+            uint gpu, bridge;
+            uint result = Native.CM_Locate_DevNodeW(out gpu, id, Native.CM_LOCATE_DEVNODE_NORMAL);
+            if (result != Native.CR_SUCCESS || Native.CM_Get_Parent(out bridge, gpu, 0) != Native.CR_SUCCESS)
+                return new EjectResult { Message = "Windows could not locate the eGPU bridge." };
+
+            var bridgeId = new StringBuilder(512);
+            if (Native.CM_Get_Device_IDW(bridge, bridgeId, bridgeId.Capacity, 0) != Native.CR_SUCCESS)
+                return new EjectResult { Message = "Windows could not identify the eGPU bridge." };
+
+            var start = new ProcessStartInfo
+            {
+                FileName = Environment.ExpandEnvironmentVariables(@"%WINDIR%\System32\pnputil.exe"),
+                Arguments = "/disable-device \"" + bridgeId + "\" /force",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using (Process process = Process.Start(start))
+            {
+                string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+                process.WaitForExit();
+                if (process.ExitCode == 0)
+                    return new EjectResult { Success = true, Message = "eGPU disabled. It is now safe to unplug the cable." };
+                return new EjectResult { Message = "Windows could not force-disable the eGPU.\n\n" + output.Trim() };
+            }
+        }
+
         private static string FindGpu()
         {
             Guid display = Native.DisplayClass;
@@ -139,9 +180,12 @@ namespace EgpuEject
     {
         private readonly Label status = new Label();
         private readonly Button retry = new Button();
+        private readonly Button force = new Button();
+        private readonly bool forceMode;
 
-        internal MainForm()
+        internal MainForm(bool forceMode)
         {
+            this.forceMode = forceMode;
             Text = "eGPU Eject";
             ClientSize = new Size(640, 360);
             MinimumSize = new Size(640, 360);
@@ -167,10 +211,20 @@ namespace EgpuEject
             retry.ForeColor = Color.White;
             retry.Visible = false;
             retry.Click += async (s, e) => await Attempt();
+            force.Text = "Force disconnect (Admin)";
+            force.Height = 64;
+            force.Dock = DockStyle.Bottom;
+            force.FlatStyle = FlatStyle.Flat;
+            force.FlatAppearance.BorderColor = Color.FromArgb(185, 80, 55);
+            force.BackColor = Color.FromArgb(75, 35, 30);
+            force.ForeColor = Color.White;
+            force.Visible = false;
+            force.Click += (s, e) => StartElevatedForce();
             Controls.Add(status);
+            Controls.Add(force);
             Controls.Add(retry);
             Controls.Add(title);
-            Shown += async (s, e) => await Attempt();
+            Shown += async (s, e) => { if (forceMode) await AttemptForce(); else await Attempt(); };
             KeyDown += (s, e) => { if (e.KeyCode == Keys.Escape || e.KeyCode == Keys.B) Close(); };
         }
 
@@ -192,7 +246,52 @@ namespace EgpuEject
             {
                 status.ForeColor = Color.White;
                 retry.Visible = true;
+                force.Visible = true;
                 retry.Focus();
+            }
+        }
+
+        private void StartElevatedForce()
+        {
+            DialogResult choice = MessageBox.Show(
+                "Force disconnect disables the eGPU bridge even if Windows says it is busy.\n\n" +
+                "Displays connected to the eGPU will go black immediately. Unsaved GPU work may be lost.\n\nContinue?",
+                "Force disconnect eGPU", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button2);
+            if (choice != DialogResult.Yes) return;
+            try
+            {
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = Application.ExecutablePath,
+                    Arguments = "--force",
+                    UseShellExecute = true,
+                    Verb = "runas"
+                });
+                Close();
+            }
+            catch (Win32Exception ex)
+            {
+                if (ex.NativeErrorCode != 1223)
+                    MessageBox.Show(ex.Message, "Could not start as administrator", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private async Task AttemptForce()
+        {
+            retry.Visible = false;
+            force.Visible = false;
+            status.Text = "Force-disabling the eGPU bridge…";
+            UseWaitCursor = true;
+            EjectResult result = await Task.Run(() => Ejector.ForceDisconnect4060Ti());
+            UseWaitCursor = false;
+            status.Text = result.Message;
+            status.ForeColor = result.Success ? Color.FromArgb(118, 224, 43) : Color.White;
+            if (result.Success) { await Task.Delay(5000); Close(); }
+            else
+            {
+                MessageBox.Show(result.Message, "Force disconnect failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                Close();
             }
         }
     }
@@ -200,11 +299,12 @@ namespace EgpuEject
     internal static class Program
     {
         [STAThread]
-        private static void Main()
+        private static void Main(string[] args)
         {
             Application.EnableVisualStyles();
             Application.SetCompatibleTextRenderingDefault(false);
-            Application.Run(new MainForm());
+            bool force = args.Length > 0 && string.Equals(args[0], "--force", StringComparison.OrdinalIgnoreCase);
+            Application.Run(new MainForm(force));
         }
     }
 }
