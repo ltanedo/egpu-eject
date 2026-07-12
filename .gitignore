@@ -1,0 +1,6 @@
+dist/
+outputs/
+work/
+*.pdb
+*.user
+*.suo
