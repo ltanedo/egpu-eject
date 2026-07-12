@@ -9,6 +9,6 @@ New-Item -ItemType Directory -Force $dist | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE" }
 Write-Host "Built $dist\eGPU-Eject.exe"
 
-& $csc /nologo /target:winexe /optimize+ /platform:anycpu /win32icon:"$root\assets\egpu-eject.ico" /out:"$dist\eGPU-Reconnect.exe" /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "$root\src\EgpuReconnect.cs"
+& $csc /nologo /target:winexe /optimize+ /platform:anycpu /win32icon:"$root\assets\egpu-reconnect.ico" /out:"$dist\eGPU-Reconnect.exe" /reference:System.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll "$root\src\EgpuReconnect.cs"
 if ($LASTEXITCODE -ne 0) { throw "Reconnect build failed with exit code $LASTEXITCODE" }
 Write-Host "Built $dist\eGPU-Reconnect.exe"

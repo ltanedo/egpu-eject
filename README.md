@@ -2,7 +2,7 @@
 
 A controller-friendly Windows utility that disconnects an external NVIDIA GeForce RTX 4060 Ti. Launching it from Windows or Xbox full-screen mode immediately requests administrator approval and runs the force-disable sequence that takes the GPU offline.
 
-The release also includes `eGPU-Reconnect.exe`, a companion utility for this PC. It requests administrator approval, re-enables the ASMedia downstream PCIe bridge above the eGPU, and asks Windows to scan for the RTX 4060 Ti and connected displays.
+The release also includes `eGPU-Reconnect.exe`, a companion utility for this PC with a distinct blue reconnect-arrow icon. It requests administrator approval, re-enables the ASMedia downstream PCIe bridge above the eGPU, and asks Windows to scan for the RTX 4060 Ti and connected displays.
 
 ## Safety behavior
 
