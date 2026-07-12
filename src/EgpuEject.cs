@@ -13,8 +13,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Eject")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace EgpuEject
 {
@@ -32,6 +32,12 @@ namespace EgpuEject
 
         [DllImport("cfgmgr32.dll")]
         internal static extern uint CM_Get_Parent(out uint parent, uint devInst, uint flags);
+
+        [DllImport("cfgmgr32.dll")]
+        internal static extern uint CM_Get_Child(out uint child, uint devInst, uint flags);
+
+        [DllImport("cfgmgr32.dll")]
+        internal static extern uint CM_Get_Sibling(out uint sibling, uint devInst, uint flags);
 
         [DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
         internal static extern uint CM_Get_Device_IDW(uint devInst, StringBuilder buffer, int length, uint flags);
@@ -118,14 +124,51 @@ namespace EgpuEject
             if (result != Native.CR_SUCCESS || Native.CM_Get_Parent(out bridge, gpu, 0) != Native.CR_SUCCESS)
                 return new EjectResult { Message = "Windows could not locate the eGPU bridge." };
 
-            var bridgeId = new StringBuilder(512);
-            if (Native.CM_Get_Device_IDW(bridge, bridgeId, bridgeId.Capacity, 0) != Native.CR_SUCCESS)
-                return new EjectResult { Message = "Windows could not identify the eGPU bridge." };
+            uint child;
+            if (Native.CM_Get_Child(out child, bridge, 0) != Native.CR_SUCCESS)
+                return new EjectResult { Message = "Windows could not enumerate the eGPU functions." };
 
+            string gpuId = id;
+            string audioId = null;
+            do
+            {
+                var childId = new StringBuilder(512);
+                if (Native.CM_Get_Device_IDW(child, childId, childId.Capacity, 0) == Native.CR_SUCCESS)
+                {
+                    string value = childId.ToString();
+                    if (!value.Equals(gpuId, StringComparison.OrdinalIgnoreCase) &&
+                        value.StartsWith("PCI\\VEN_10DE", StringComparison.OrdinalIgnoreCase))
+                        audioId = value;
+                }
+                uint sibling;
+                if (Native.CM_Get_Sibling(out sibling, child, 0) != Native.CR_SUCCESS) break;
+                child = sibling;
+            } while (true);
+
+            // Remove the audio function first, then the display function and its monitor subtree.
+            // Removing the removable child devnodes takes effect now; disabling their PCI bridge
+            // instead merely schedules a reboot on many USB4 systems.
+            string details = "";
+            if (audioId != null)
+            {
+                EjectResult audio = RemoveDevice(audioId);
+                details += audio.Message + "\n\n";
+                if (!audio.Success) return new EjectResult { Message = "Could not remove the eGPU audio function.\n\n" + details.Trim() };
+            }
+
+            EjectResult display = RemoveDevice(gpuId);
+            details += display.Message;
+            if (display.Success)
+                return new EjectResult { Success = true, Message = "eGPU functions removed. It is now safe to unplug the cable." };
+            return new EjectResult { Message = "Windows could not force-remove the RTX 4060 Ti.\n\n" + details.Trim() };
+        }
+
+        private static EjectResult RemoveDevice(string deviceId)
+        {
             var start = new ProcessStartInfo
             {
                 FileName = Environment.ExpandEnvironmentVariables(@"%WINDIR%\System32\pnputil.exe"),
-                Arguments = "/disable-device \"" + bridgeId + "\" /force",
+                Arguments = "/remove-device \"" + deviceId + "\" /subtree /force",
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
@@ -135,9 +178,12 @@ namespace EgpuEject
             {
                 string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
                 process.WaitForExit();
-                if (process.ExitCode == 0)
-                    return new EjectResult { Success = true, Message = "eGPU disabled. It is now safe to unplug the cable." };
-                return new EjectResult { Message = "Windows could not force-disable the eGPU.\n\n" + output.Trim() };
+                bool reboot = output.IndexOf("reboot is needed", StringComparison.OrdinalIgnoreCase) >= 0;
+                return new EjectResult
+                {
+                    Success = process.ExitCode == 0 && !reboot,
+                    Message = output.Trim()
+                };
             }
         }
 
@@ -211,7 +257,7 @@ namespace EgpuEject
             retry.ForeColor = Color.White;
             retry.Visible = false;
             retry.Click += async (s, e) => await Attempt();
-            force.Text = "Force disconnect (Admin)";
+            force.Text = "Force remove eGPU (Admin)";
             force.Height = 64;
             force.Dock = DockStyle.Bottom;
             force.FlatStyle = FlatStyle.Flat;
@@ -254,7 +300,7 @@ namespace EgpuEject
         private void StartElevatedForce()
         {
             DialogResult choice = MessageBox.Show(
-                "Force disconnect disables the eGPU bridge even if Windows says it is busy.\n\n" +
+                "Force remove removes the eGPU's display and audio devices even if Windows says they are busy.\n\n" +
                 "Displays connected to the eGPU will go black immediately. Unsaved GPU work may be lost.\n\nContinue?",
                 "Force disconnect eGPU", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
                 MessageBoxDefaultButton.Button2);
@@ -281,7 +327,7 @@ namespace EgpuEject
         {
             retry.Visible = false;
             force.Visible = false;
-            status.Text = "Force-disabling the eGPU bridge…";
+            status.Text = "Force-removing the eGPU devices…";
             UseWaitCursor = true;
             EjectResult result = await Task.Run(() => Ejector.ForceDisconnect4060Ti());
             UseWaitCursor = false;
