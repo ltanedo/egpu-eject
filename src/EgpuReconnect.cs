@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Reconnect")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.4.0.0")]
-[assembly: AssemblyFileVersion("1.4.0.0")]
+[assembly: AssemblyVersion("1.5.0.0")]
+[assembly: AssemblyFileVersion("1.5.0.0")]
 
 namespace EgpuReconnect
 {
@@ -83,6 +83,7 @@ namespace EgpuReconnect
         // Compatible ID shared by the ASMedia PCIe switch ports in this eGPU dock.
         // Using the hardware ID rather than an instance path survives GPU swaps and port changes.
         private const string BridgeHardwareId = @"PCI\VEN_1B21&DEV_2461";
+        private const string Usb4RouterHardwareId = @"USB4\VID_174C&PID_2461";
 
         internal static string Run()
         {
@@ -134,7 +135,22 @@ namespace EgpuReconnect
             }
 
             if (problem == Native.CM_PROB_FAILED_POST_START)
-                throw new InvalidOperationException(gpu.Name + " still reports Code 43 after GPU restart, disable/enable, and PCIe bridge reset.\n\nFully shut down the PC and dock, remove dock power for 30 seconds, then reconnect. Reinstall the NVIDIA driver if Code 43 returns.");
+            {
+                // This is the closest software equivalent to unplugging and reconnecting the
+                // dock cable: restart only the ASMedia USB4 router belonging to this enclosure,
+                // then allow the PCIe tunnel and its child devices to enumerate from scratch.
+                Pnp("/restart-device /deviceid \"" + Usb4RouterHardwareId + "\"");
+                Thread.Sleep(5000);
+                Pnp("/scan-devices");
+                Thread.Sleep(7000);
+                gpu = FindNvidiaEgpu();
+                problem = gpu == null ? 45u : GetProblem(gpu.DevInst);
+            }
+
+            if (problem == Native.CM_PROB_FAILED_POST_START)
+                throw new InvalidOperationException(gpu.Name + " still reports Code 43 after GPU restart, disable/enable, PCIe bridge reset, and ASMedia USB4 router restart.\n\nPhysically unplug and reconnect the USB4 cable. If that does not work, fully shut down the PC and dock, remove dock power for 30 seconds, then reconnect.");
+            if (gpu == null)
+                throw new InvalidOperationException("The ASMedia USB4 router restarted, but the NVIDIA eGPU did not reappear.\n\nPhysically reconnect the USB4 cable once.");
             if (problem != 0)
                 throw new InvalidOperationException(gpu.Name + " was detected, but Windows reports device problem code " + problem + ".");
 
