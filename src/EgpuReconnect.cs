@@ -15,8 +15,8 @@ using System.Windows.Forms;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("eGPU Reconnect")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.3.0.0")]
-[assembly: AssemblyFileVersion("1.3.0.0")]
+[assembly: AssemblyVersion("1.4.0.0")]
+[assembly: AssemblyFileVersion("1.4.0.0")]
 
 namespace EgpuReconnect
 {
@@ -68,6 +68,7 @@ namespace EgpuReconnect
     {
         internal string Id;
         internal string Name;
+        internal string ParentId;
         internal uint DevInst;
     }
 
@@ -122,7 +123,18 @@ namespace EgpuReconnect
             }
 
             if (problem == Native.CM_PROB_FAILED_POST_START)
-                throw new InvalidOperationException(gpu.Name + " still reports Code 43 after restart and disable/enable recovery.\n\nFully power off the dock and PC, reconnect them, and reinstall the NVIDIA driver if Code 43 returns.");
+            {
+                string bridgeId = gpu.ParentId;
+                Pnp("/restart-device \"" + bridgeId + "\"");
+                Thread.Sleep(2000);
+                Pnp("/scan-devices");
+                Thread.Sleep(4000);
+                gpu = FindNvidiaEgpu();
+                problem = gpu == null ? 45u : GetProblem(gpu.DevInst);
+            }
+
+            if (problem == Native.CM_PROB_FAILED_POST_START)
+                throw new InvalidOperationException(gpu.Name + " still reports Code 43 after GPU restart, disable/enable, and PCIe bridge reset.\n\nFully shut down the PC and dock, remove dock power for 30 seconds, then reconnect. Reinstall the NVIDIA driver if Code 43 returns.");
             if (problem != 0)
                 throw new InvalidOperationException(gpu.Name + " was detected, but Windows reports device problem code " + problem + ".");
 
@@ -167,8 +179,13 @@ namespace EgpuReconnect
                     string name = "NVIDIA eGPU";
                     if (Native.SetupDiGetDeviceRegistryPropertyW(set, ref data, Native.SPDRP_DEVICEDESC,
                         out type, raw, (uint)raw.Length, out needed))
-                        name = Encoding.Unicode.GetString(raw).TrimEnd('\0');
-                    return new NvidiaEgpu { Id = id.ToString(), Name = name, DevInst = data.DevInst };
+                    {
+                        int byteCount = (int)Math.Min(needed, (uint)raw.Length);
+                        name = Encoding.Unicode.GetString(raw, 0, byteCount);
+                        int nullIndex = name.IndexOf('\0');
+                        if (nullIndex >= 0) name = name.Substring(0, nullIndex);
+                    }
+                    return new NvidiaEgpu { Id = id.ToString(), Name = name, ParentId = parentId.ToString(), DevInst = data.DevInst };
                 }
             }
             finally { Native.SetupDiDestroyDeviceInfoList(set); }

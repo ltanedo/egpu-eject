@@ -4,7 +4,7 @@ A controller-friendly Windows utility that disconnects an NVIDIA graphics card i
 
 The release also includes `eGPU-Reconnect.exe`, a companion utility for this PC with a distinct blue reconnect-arrow icon. It requests administrator approval, enables the dock's ASMedia PCIe switch ports by hardware ID, and asks Windows to scan for the installed NVIDIA card and connected displays. This survives GPU swaps and device-instance changes.
 
-Reconnect also checks the docked NVIDIA adapter's Windows device problem code. For Code 43 it restarts that exact GPU, checks again, and if necessary performs one disable/enable cycle plus another hardware scan. It never applies this recovery to an internal or unrelated NVIDIA adapter. Persistent Code 43 is reported with cold-power-cycle and driver-repair guidance.
+Reconnect also checks the docked NVIDIA adapter's Windows device problem code. For Code 43 it restarts that exact GPU, checks again, and if necessary performs one disable/enable cycle plus another hardware scan. If Code 43 remains, it performs one live restart of the exact ASMedia downstream bridge and rescans before giving cold-power-cycle and driver-repair guidance. It never applies this recovery to an internal or unrelated NVIDIA adapter, and it does not persistently disable the bridge.
 
 ## Safety behavior
 
