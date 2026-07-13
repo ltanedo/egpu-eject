@@ -15,8 +15,8 @@ using System.Diagnostics;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("NVIDIA eGPU Tray")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.2.0.0")]
-[assembly: AssemblyFileVersion("1.2.0.0")]
+[assembly: AssemblyVersion("1.3.0.0")]
+[assembly: AssemblyFileVersion("1.3.0.0")]
 
 namespace EgpuTray
 {
@@ -218,7 +218,7 @@ namespace EgpuTray
             exitItem.Click += (s, e) => ExitThread();
             tray.ContextMenuStrip = new ContextMenuStrip();
             tray.ContextMenuStrip.Items.Add(statusItem);
-            var shortcutItem = new ToolStripMenuItem("Shortcut: Right Arrow + Right Shift + Delete");
+            var shortcutItem = new ToolStripMenuItem("Toggle: Right Arrow + Right Shift + Delete");
             shortcutItem.Enabled = false;
             tray.ContextMenuStrip.Items.Add(shortcutItem);
             tray.ContextMenuStrip.Items.Add(new ToolStripSeparator());
@@ -233,7 +233,7 @@ namespace EgpuTray
             tray.Visible = true;
 
             keyboardHook = new KeyboardSequenceHook();
-            keyboardHook.Triggered += async (s, e) => await Disconnect();
+            keyboardHook.Triggered += async (s, e) => await ToggleEgpu();
 
             debounce.Interval = 1600;
             debounce.Tick += async (s, e) =>
@@ -306,6 +306,25 @@ namespace EgpuTray
                 Notify("eGPU disconnect failed", ex.Message, ToolTipIcon.Error);
             }
             finally { busy = false; UpdateActions(); }
+        }
+
+        private async Task ToggleEgpu()
+        {
+            if (busy) return;
+            dockPresent = DeviceDetector.IsDockPresent();
+            if (!dockPresent)
+            {
+                SetStatus("Dock disconnected", false);
+                Notify("eGPU dock not connected", "Plug in the USB4 dock; reconnect will run automatically when it appears.", ToolTipIcon.Info);
+                return;
+            }
+
+            EgpuReconnect.NvidiaEgpu gpu = EgpuReconnect.Reconnector.FindNvidiaEgpu();
+            uint problem = gpu == null ? UInt32.MaxValue : EgpuReconnect.Reconnector.GetProblem(gpu.DevInst);
+            if (gpu != null && problem == 0)
+                await Disconnect();
+            else
+                await Reconnect("Shortcut reconnect");
         }
 
         private void SetStatus(string text, bool present)

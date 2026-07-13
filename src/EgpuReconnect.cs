@@ -194,13 +194,13 @@ namespace EgpuReconnect
             } while (true);
         }
 
-        private static uint GetProblem(uint devInst)
+        internal static uint GetProblem(uint devInst)
         {
             uint status, problem;
             return Native.CM_Get_DevNode_Status(out status, out problem, devInst, 0) == Native.CR_SUCCESS ? problem : UInt32.MaxValue;
         }
 
-        private static NvidiaEgpu FindNvidiaEgpu()
+        internal static NvidiaEgpu FindNvidiaEgpu()
         {
             Guid display = Native.DisplayClass;
             IntPtr set = Native.SetupDiGetClassDevsW(ref display, null, IntPtr.Zero, Native.DIGCF_PRESENT);

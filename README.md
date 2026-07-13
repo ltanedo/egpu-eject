@@ -26,7 +26,7 @@ Launch `eGPU-Tray.exe` and approve the administrator prompt. The tray menu provi
 - **Run at startup** — creates or removes a per-user Task Scheduler logon task.
 - **Exit** — stops device monitoring and closes the tray application.
 
-The global disconnect shortcut uses `Right Arrow`, `Right Shift`, and `Delete`. Enter all three keys in any order within three seconds. Each key must appear once; any unrelated non-modifier key resets the sequence.
+The global toggle shortcut uses `Right Arrow`, `Right Shift`, and `Delete`. Enter all three keys in any order within three seconds. Each key must appear once; any unrelated non-modifier key resets the sequence. If the docked NVIDIA GPU is healthy and active, the shortcut disconnects it. If the dock is present but its GPU is disabled, missing, or reporting an error, the shortcut runs reconnect and recovery instead.
 
 While running, the tray app watches Windows Plug and Play events for the enclosure's ASMedia USB4 router. When the dock appears, it automatically runs the reconnect workflow. Multiple events are debounced, and single-instance protection prevents duplicate tray monitors.
 
