@@ -15,11 +15,90 @@ using System.Diagnostics;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("NVIDIA eGPU Tray")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.0.0.0")]
-[assembly: AssemblyFileVersion("1.0.0.0")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace EgpuTray
 {
+    internal sealed class KeyboardSequenceHook : IDisposable
+    {
+        private const int WH_KEYBOARD_LL = 13;
+        private const int WM_KEYDOWN = 0x0100;
+        private const int WM_SYSKEYDOWN = 0x0104;
+        private readonly HookProc callback;
+        private IntPtr hook;
+        private int step;
+        private DateTime lastKey;
+
+        internal event EventHandler Triggered;
+
+        internal KeyboardSequenceHook()
+        {
+            callback = HookCallback;
+            hook = SetWindowsHookEx(WH_KEYBOARD_LL, callback, GetModuleHandle(null), 0);
+            if (hook == IntPtr.Zero) throw new Win32Exception(Marshal.GetLastWin32Error());
+        }
+
+        private IntPtr HookCallback(int code, IntPtr wParam, IntPtr lParam)
+        {
+            if (code >= 0 && (wParam.ToInt32() == WM_KEYDOWN || wParam.ToInt32() == WM_SYSKEYDOWN))
+            {
+                Keys key = (Keys)Marshal.ReadInt32(lParam);
+                if (!IsModifier(key)) ProcessKey(key);
+            }
+            return CallNextHookEx(hook, code, wParam, lParam);
+        }
+
+        private void ProcessKey(Keys key)
+        {
+            if ((DateTime.UtcNow - lastKey).TotalSeconds > 3) step = 0;
+            lastKey = DateTime.UtcNow;
+
+            bool plus = key == Keys.Oemplus || key == Keys.Add;
+            bool minus = key == Keys.OemMinus || key == Keys.Subtract;
+            if (step == 0 && plus) step = 1;
+            else if (step == 1 && minus) step = 2;
+            else if (step == 2 && key == Keys.Escape)
+            {
+                step = 0;
+                EventHandler handler = Triggered;
+                if (handler != null) handler(this, EventArgs.Empty);
+            }
+            else step = plus ? 1 : 0;
+        }
+
+        private static bool IsModifier(Keys key)
+        {
+            return key == Keys.ShiftKey || key == Keys.LShiftKey || key == Keys.RShiftKey ||
+                   key == Keys.ControlKey || key == Keys.LControlKey || key == Keys.RControlKey ||
+                   key == Keys.Menu || key == Keys.LMenu || key == Keys.RMenu ||
+                   key == Keys.LWin || key == Keys.RWin;
+        }
+
+        public void Dispose()
+        {
+            if (hook != IntPtr.Zero)
+            {
+                UnhookWindowsHookEx(hook);
+                hook = IntPtr.Zero;
+            }
+        }
+
+        private delegate IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern IntPtr SetWindowsHookEx(int idHook, HookProc callback, IntPtr module, uint threadId);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool UnhookWindowsHookEx(IntPtr hook);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+        private static extern IntPtr GetModuleHandle(string moduleName);
+    }
+
     internal static class DeviceDetector
     {
         private const uint DIGCF_PRESENT = 0x2;
@@ -108,6 +187,7 @@ namespace EgpuTray
         private readonly ToolStripMenuItem disconnectItem = new ToolStripMenuItem("Disconnect eGPU");
         private readonly ToolStripMenuItem reconnectItem = new ToolStripMenuItem("Reconnect now");
         private readonly ToolStripMenuItem startupItem = new ToolStripMenuItem("Run at startup");
+        private readonly KeyboardSequenceHook keyboardHook;
         private readonly DeviceEventForm eventForm = new DeviceEventForm();
         private readonly System.Windows.Forms.Timer debounce = new System.Windows.Forms.Timer();
         private bool dockPresent;
@@ -125,6 +205,9 @@ namespace EgpuTray
             exitItem.Click += (s, e) => ExitThread();
             tray.ContextMenuStrip = new ContextMenuStrip();
             tray.ContextMenuStrip.Items.Add(statusItem);
+            var shortcutItem = new ToolStripMenuItem("Shortcut: +, -, Esc");
+            shortcutItem.Enabled = false;
+            tray.ContextMenuStrip.Items.Add(shortcutItem);
             tray.ContextMenuStrip.Items.Add(new ToolStripSeparator());
             tray.ContextMenuStrip.Items.Add(disconnectItem);
             tray.ContextMenuStrip.Items.Add(reconnectItem);
@@ -135,6 +218,9 @@ namespace EgpuTray
             tray.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
             tray.Text = "NVIDIA eGPU Tray";
             tray.Visible = true;
+
+            keyboardHook = new KeyboardSequenceHook();
+            keyboardHook.Triggered += async (s, e) => await Disconnect();
 
             debounce.Interval = 1600;
             debounce.Tick += async (s, e) =>
@@ -278,6 +364,7 @@ namespace EgpuTray
         {
             debounce.Stop();
             tray.Visible = false;
+            keyboardHook.Dispose();
             tray.Dispose();
             eventForm.Dispose();
             base.ExitThreadCore();

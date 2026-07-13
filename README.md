@@ -26,6 +26,8 @@ Launch `eGPU-Tray.exe` and approve the administrator prompt. The tray menu provi
 - **Run at startup** — creates or removes a per-user Task Scheduler logon task.
 - **Exit** — stops device monitoring and closes the tray application.
 
+The global disconnect shortcut is `+`, then `-`, then `Esc`. Enter the three keys in that order within three seconds. Main-keyboard and numpad plus/minus are both accepted; any other non-modifier key resets the sequence.
+
 While running, the tray app watches Windows Plug and Play events for the enclosure's ASMedia USB4 router. When the dock appears, it automatically runs the reconnect workflow. Multiple events are debounced, and single-instance protection prevents duplicate tray monitors.
 
 Startup is opt-in. When enabled, the scheduled task runs at highest privilege so automatic launches do not produce a UAC prompt at every sign-in.
