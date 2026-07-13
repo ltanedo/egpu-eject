@@ -15,8 +15,8 @@ using System.Diagnostics;
 [assembly: AssemblyCompany("ltanedo")]
 [assembly: AssemblyProduct("NVIDIA eGPU Tray")]
 [assembly: AssemblyCopyright("Copyright © 2026 ltanedo")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace EgpuTray
 {
@@ -27,7 +27,9 @@ namespace EgpuTray
         private const int WM_SYSKEYDOWN = 0x0104;
         private readonly HookProc callback;
         private IntPtr hook;
-        private int step;
+        private bool sawRight;
+        private bool sawRightShift;
+        private bool sawDelete;
         private DateTime lastKey;
 
         internal event EventHandler Triggered;
@@ -44,32 +46,43 @@ namespace EgpuTray
             if (code >= 0 && (wParam.ToInt32() == WM_KEYDOWN || wParam.ToInt32() == WM_SYSKEYDOWN))
             {
                 Keys key = (Keys)Marshal.ReadInt32(lParam);
-                if (!IsModifier(key)) ProcessKey(key);
+                if (!IsIgnoredModifier(key)) ProcessKey(key);
             }
             return CallNextHookEx(hook, code, wParam, lParam);
         }
 
         private void ProcessKey(Keys key)
         {
-            if ((DateTime.UtcNow - lastKey).TotalSeconds > 3) step = 0;
+            if ((DateTime.UtcNow - lastKey).TotalSeconds > 3) Reset();
             lastKey = DateTime.UtcNow;
 
-            bool plus = key == Keys.Oemplus || key == Keys.Add;
-            bool minus = key == Keys.OemMinus || key == Keys.Subtract;
-            if (step == 0 && plus) step = 1;
-            else if (step == 1 && minus) step = 2;
-            else if (step == 2 && key == Keys.Escape)
+            if (key == Keys.Right) sawRight = true;
+            else if (key == Keys.RShiftKey) sawRightShift = true;
+            else if (key == Keys.Delete) sawDelete = true;
+            else
             {
-                step = 0;
+                Reset();
+                return;
+            }
+
+            if (sawRight && sawRightShift && sawDelete)
+            {
+                Reset();
                 EventHandler handler = Triggered;
                 if (handler != null) handler(this, EventArgs.Empty);
             }
-            else step = plus ? 1 : 0;
         }
 
-        private static bool IsModifier(Keys key)
+        private void Reset()
         {
-            return key == Keys.ShiftKey || key == Keys.LShiftKey || key == Keys.RShiftKey ||
+            sawRight = false;
+            sawRightShift = false;
+            sawDelete = false;
+        }
+
+        private static bool IsIgnoredModifier(Keys key)
+        {
+            return key == Keys.ShiftKey || key == Keys.LShiftKey ||
                    key == Keys.ControlKey || key == Keys.LControlKey || key == Keys.RControlKey ||
                    key == Keys.Menu || key == Keys.LMenu || key == Keys.RMenu ||
                    key == Keys.LWin || key == Keys.RWin;
@@ -205,7 +218,7 @@ namespace EgpuTray
             exitItem.Click += (s, e) => ExitThread();
             tray.ContextMenuStrip = new ContextMenuStrip();
             tray.ContextMenuStrip.Items.Add(statusItem);
-            var shortcutItem = new ToolStripMenuItem("Shortcut: +, -, Esc");
+            var shortcutItem = new ToolStripMenuItem("Shortcut: Right Arrow + Right Shift + Delete");
             shortcutItem.Enabled = false;
             tray.ContextMenuStrip.Items.Add(shortcutItem);
             tray.ContextMenuStrip.Items.Add(new ToolStripSeparator());
